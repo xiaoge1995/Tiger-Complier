@@ -1,0 +1,154 @@
+package Parse;
+import Absyn.*;
+
+action code {: static Symbol.Symbol sym(String s) {
+	         return Symbol.Symbol.symbol(s);
+	        }
+	    :};
+
+parser code  {: 
+  public Exp parseResult;
+  Lexer lexer;
+
+  public void syntax_error(java_cup.runtime.Symbol current) {
+   report_error("Syntax error (" + current.sym + ")", current);
+  }
+
+  ErrorMsg.ErrorMsg errorMsg;
+
+  public void report_error(String message, 
+			   java_cup.runtime.Symbol info) {
+      errorMsg.error(info.left, message);
+  }
+
+  public Grm(Lexer l, ErrorMsg.ErrorMsg err) {
+    this();
+    errorMsg=err;
+    lexer=l;
+  }
+:};
+
+scan with {: return lexer.nextToken(); :};
+
+terminal String ID, STRING;
+terminal Integer INT;
+terminal COMMA, COLON, SEMICOLON, LPAREN, RPAREN, 
+	LBRACK, RBRACK, LBRACE, RBRACE, DOT, PLUS, MINUS, 
+	TIMES, DIVIDE, EQ, NEQ, LT, LE, GT, GE, AND, OR, 
+	ASSIGN, ARRAY, IF, THEN, ELSE, WHILE, FOR, TO, DO, 
+	LET, IN, END, OF, BREAK, NIL, FUNCTION, VAR, TYPE, UMINUS;
+
+non terminal Exp program, expr;
+non terminal ExpList exprList, exprSeq;
+non terminal Dec declaration;
+non terminal DecList declarationList;
+non terminal VarDec variableDeclaration;
+non terminal TypeDec typeDeclaration, typeDeclarationList;
+non terminal FunctionDec functionDeclaration, functionDeclarationList;
+non terminal Ty type;
+non terminal Var lvalue;
+non terminal FieldExpList fieldList;
+non terminal FieldList typeFields;
+
+precedence right FUNCTION, TYPE;
+precedence right OF;
+precedence right DO, ELSE, THEN;
+precedence nonassoc ASSIGN;
+precedence left OR;
+precedence left AND;
+precedence nonassoc EQ, NEQ, LT, LE, GE, GT;
+precedence left PLUS, MINUS;
+precedence left TIMES, DIVIDE;
+precedence left LPAREN;
+precedence left UMINUS;
+
+start with program;
+
+program ::= expr:e	{:parser.parseResult = (Exp)e;
+	Print P = new Print(System.out);
+	P.prExp(e, 3);
+	Semant.Semant S = new Semant.Semant(parser.errorMsg);
+	S.transExp(e);:}
+	;
+
+expr ::= STRING:s											{:RESULT = new StringExp(sleft, s);:}
+	|	INT:dat												{:RESULT = new IntExp(datleft, dat.intValue());:}
+	|	NIL:n												{:RESULT = new NilExp(nleft);:}
+	|	lvalue:val											{:RESULT = new VarExp(val.pos, val);:}
+	|	MINUS:m expr:e 										{:RESULT = new OpExp(mleft, new IntExp(e.pos, 0), OpExp.MINUS, e);:} %prec UMINUS
+	|	expr:e1 PLUS expr:e2								{:RESULT = new OpExp(e1.pos, e1, OpExp.PLUS, e2);:}
+	|	expr:e1 MINUS expr:e2								{:RESULT = new OpExp(e1.pos, e1, OpExp.MINUS, e2);:}
+	|	expr:e1 TIMES expr:e2								{:RESULT = new OpExp(e1.pos, e1, OpExp.MUL, e2);:}
+	|	expr:e1 DIVIDE expr:e2								{:RESULT = new OpExp(e1.pos, e1, OpExp.DIV, e2);:}
+	|	expr:e1 OR expr:e2									{:RESULT = new IfExp(e1.pos, e1, new IntExp(e1.pos, 1), e2);:}
+	|	expr:e1 AND expr:e2									{:RESULT = new IfExp(e1.pos, e1, e2, new IntExp(e1.pos, 0));:}
+	|	expr:e1 EQ expr:e2									{:RESULT = new OpExp(e1.pos, e1, OpExp.EQ, e2);:}
+	|	expr:e1 NEQ expr:e2									{:RESULT = new OpExp(e1.pos, e1, OpExp.NE, e2);:}
+	|	expr:e1 LT expr:e2									{:RESULT = new OpExp(e1.pos, e1, OpExp.LT, e2);:}
+	|	expr:e1 LE expr:e2									{:RESULT = new OpExp(e1.pos, e1, OpExp.LE, e2);:}
+	|	expr:e1 GT expr:e2									{:RESULT = new OpExp(e1.pos, e1, OpExp.GT, e2);:}
+	|	expr:e1 GE expr:e2									{:RESULT = new OpExp(e1.pos, e1, OpExp.GE, e2);:}
+	|	lvalue:val ASSIGN expr:e							{:RESULT = new AssignExp(valleft, val, e);:}
+	|	ID:id LPAREN exprList:el RPAREN						{:RESULT = new CallExp(idleft, Symbol.Symbol.symbol(id), el);:}
+	|	ID:id LPAREN RPAREN									{:RESULT = new CallExp(idleft, Symbol.Symbol.symbol(id), null);:}
+	|	LPAREN:l exprSeq:es RPAREN							{:RESULT = new SeqExp(lleft, es);:}
+	|	LPAREN:l RPAREN										{:RESULT = new SeqExp(lleft, null);:}
+	|	ID:id LBRACE fieldList:fl RBRACE					{:RESULT = new RecordExp(idleft, Symbol.Symbol.symbol(id), fl);:}
+	|	ID:id LBRACE RBRACE									{:RESULT = new RecordExp(idleft, Symbol.Symbol.symbol(id), null);:}
+	|	ID:id LBRACK expr:e1 RBRACK OF expr:e2				{:RESULT = new ArrayExp(idleft, Symbol.Symbol.symbol(id), e1, e2);:}
+	|	IF:f expr:e1 THEN expr:e2							{:RESULT = new IfExp(fleft, e1, e2);:}
+	|	IF:f expr:e1 THEN expr:e2 ELSE expr:e3				{:RESULT = new IfExp(fleft, e1, e2, e3);:}
+	|	WHILE:w expr:e1 DO expr:e2							{:RESULT = new WhileExp(wleft, e1, e2);:}
+	|	FOR:f ID:id ASSIGN expr:e1 TO expr:e2 DO expr:e3	{:RESULT = new ForExp(fleft, new VarDec(idleft, Symbol.Symbol.symbol(id), new NameTy(idleft, Symbol.Symbol.symbol("int")), e1), e2, e3);:}
+	|	BREAK:b												{:RESULT = new BreakExp(bleft);:}
+	|	LET:l declarationList:dl IN exprSeq:es END			{:RESULT = new LetExp(lleft, dl, new SeqExp(esleft, es));:}
+	|	LET:l declarationList:dl IN END						{:RESULT = new LetExp(lleft, dl, null);:}
+	;
+exprSeq ::= expr:e											{:RESULT = new ExpList(e, null);:}
+	|	expr:e SEMICOLON exprSeq:es							{:RESULT = new ExpList(e, es);:}
+	;
+exprList ::= expr:e											{:RESULT = new ExpList(e, null);:}
+	|	expr:e COMMA exprList:el							{:RESULT = new ExpList(e, el);:}
+	;
+fieldList ::= ID:id EQ expr:e								{:RESULT = new FieldExpList(idleft, Symbol.Symbol.symbol(id), e, null);:}
+	|	ID:id EQ expr:e COMMA fieldList:fl 					{:RESULT = new FieldExpList(idleft, Symbol.Symbol.symbol(id), e, fl);:}
+	;
+lvalue ::= ID:id											{:RESULT = new SimpleVar(idleft, Symbol.Symbol.symbol(id));:}
+	|	lvalue:l DOT ID:id									{:RESULT = new FieldVar(lleft, l, Symbol.Symbol.symbol(id));:}
+	|	lvalue:l LBRACK expr:e RBRACK						{:RESULT = new SubscriptVar(lleft, l, e);:} 
+	|	ID:id LBRACK expr:e RBRACK							{:RESULT = new SubscriptVar(idleft, new SimpleVar(idleft, Symbol.Symbol.symbol(id)), e);:}
+	;
+declarationList ::= declaration:d							{:RESULT = new DecList(d, null);:}
+	|	declaration:d declarationList:dl				{:RESULT = new DecList(d, dl);:}
+	;
+declaration ::= typeDeclarationList:td							{:RESULT = td;:}
+	|	variableDeclaration:vd								{:RESULT = vd;:}
+	|	functionDeclarationList:fd								{:RESULT = fd;:}
+	;
+typeDeclarationList ::= typeDeclaration:t					{:RESULT = t;:}
+	|	typeDeclaration:t typeDeclarationList:l				{:RESULT = new TypeDec(t.pos, t.name, t.ty, l);:}
+	;
+typeDeclaration ::= TYPE:ty ID:id EQ type:t					{:RESULT = new TypeDec(tyleft, Symbol.Symbol.symbol(id), t, null);:}
+	;
+type ::= ID:id												{:RESULT = new NameTy(idleft, Symbol.Symbol.symbol(id));:}
+	|	LBRACE:l typeFields:tl RBRACE						{:RESULT = new RecordTy(lleft, tl);:}
+	|	LBRACE:l RBRACE										{:RESULT = new RecordTy(lleft, null);:}
+	|	ARRAY:a OF ID:id									{:RESULT = new ArrayTy(aleft, Symbol.Symbol.symbol(id));:} 
+	;
+typeFields ::= ID:id1 COLON ID:id2							{:RESULT = new FieldList(id1left, Symbol.Symbol.symbol(id1), Symbol.Symbol.symbol(id2), null);:}
+	|	ID:id1 COLON ID:id2 COMMA typeFields:tfs			{:RESULT = new FieldList(id1left, Symbol.Symbol.symbol(id1), Symbol.Symbol.symbol(id2), tfs);:}
+	;
+variableDeclaration ::= VAR:v ID:id ASSIGN expr:e			{:RESULT = new VarDec(vleft, Symbol.Symbol.symbol(id), null, e);:}
+	|	VAR:v ID:id1 COLON ID:id2 ASSIGN expr:e				{:RESULT = new VarDec(vleft, Symbol.Symbol.symbol(id1), new NameTy(id1left, Symbol.Symbol.symbol(id2)), e);:}
+	;
+functionDeclarationList ::= functionDeclaration:f			{:RESULT = f;:}
+	|	functionDeclaration:f functionDeclarationList:l		{:RESULT = new FunctionDec(f.pos, f.name, f.params, f.result, f.body, l);:}
+	;
+functionDeclaration ::= FUNCTION:f ID:id LPAREN typeFields:tf RPAREN EQ expr:e
+															{:RESULT = new FunctionDec(fleft, Symbol.Symbol.symbol(id), tf, null, e, null);:}
+	|	FUNCTION:f ID:id LPAREN RPAREN EQ expr:e			{:RESULT = new FunctionDec(fleft, Symbol.Symbol.symbol(id), null, null, e, null);:}
+	|	FUNCTION:f ID:id1 LPAREN typeFields:tf RPAREN COLON ID:id2 EQ expr:e
+															{:RESULT = new FunctionDec(fleft, Symbol.Symbol.symbol(id1), tf, new NameTy(id2left, Symbol.Symbol.symbol(id2)), e, null);:}
+	|	FUNCTION:f ID:id1 LPAREN RPAREN COLON ID:id2 EQ expr:e
+															{:RESULT = new FunctionDec(fleft, Symbol.Symbol.symbol(id1), null, new NameTy(id2left, Symbol.Symbol.symbol(id2)), e, null);:}
+	;
